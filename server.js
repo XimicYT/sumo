@@ -83,11 +83,33 @@ io.on('connection', (socket) => {
 setInterval(() => {
     for (let id in players) {
         const p = players[id];
+        
+        // 1. Check for respawn FIRST
+        if (p.body.position.y < -30) {
+            if (p.isRed) scores.blue++; else scores.red++;
+            io.emit('updateScores', scores);
+            io.emit('log', '🥊 Ring out!');
+            
+            p.body.position.set((Math.random() - 0.5) * 40, 20, (Math.random() - 0.5) * 40);
+            p.body.velocity.set(0, 0, 0);
+            p.body.angularVelocity.set(0, 0, 0);
+            continue; // Skip the rest of this frame
+        }
+
+        // 2. THEN skip applying forces if they are mid-fall
         if (p.body.position.y < -5) continue;
+
+        // 3. Stop them from standing on the invisible Box corners
+        const distFromCenter = Math.hypot(p.body.position.x, p.body.position.z);
+        if (distFromCenter > arenaRadius && p.body.position.y > -2) {
+            p.body.position.y = -6; // Force them to fall
+            p.body.velocity.y = -10;
+        }
 
         const force = 1200 * p.powerMult;
         const torque = 600 * p.powerMult;
         
+        // ... (Keep your existing W, A, S, D, and Spacebar logic here) ...
         if (p.inputs.w) { p.body.applyForce(new CANNON.Vec3(0, 0, -force), p.body.position); p.body.applyTorque(new CANNON.Vec3(-torque, 0, 0)); }
         if (p.inputs.s) { p.body.applyForce(new CANNON.Vec3(0, 0, force), p.body.position); p.body.applyTorque(new CANNON.Vec3(torque, 0, 0)); }
         if (p.inputs.a) { p.body.applyForce(new CANNON.Vec3(-force, 0, 0), p.body.position); p.body.applyTorque(new CANNON.Vec3(0, 0, torque)); }
@@ -120,17 +142,6 @@ setInterval(() => {
                 powerUp = null;
                 io.emit('log', `⚡ Power-up consumed!`);
             }
-        }
-        
-        // Natural death (fell below arena)
-        if (p.body.position.y < -30) {
-            if (p.isRed) scores.blue++; else scores.red++;
-            io.emit('updateScores', scores);
-            io.emit('log', '💀 Ring out!');
-            
-            p.body.position.set((Math.random() - 0.5) * 40, 20, (Math.random() - 0.5) * 40);
-            p.body.velocity.set(0, 0, 0);
-            p.body.angularVelocity.set(0, 0, 0);
         }
     }
     
