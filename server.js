@@ -8,17 +8,20 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
 // --- SERVER PHYSICS WORLD ---
-const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -50, 0) }); // Slightly heavier gravity
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -50, 0) });
 const iceMat = new CANNON.Material('ice');
 const iceContact = new CANNON.ContactMaterial(iceMat, iceMat, {
     friction: 0.1, restitution: 0.8, contactEquationStiffness: 1e8, contactEquationRelaxation: 3
 });
 world.addContactMaterial(iceContact);
 
-// The Giant Platform
-const arenaRadius = 100; // MASSIVE arena
+// --- FIXED: The Giant Platform is now a true Cylinder ---
+const arenaRadius = 100;
 const platformBody = new CANNON.Body({ mass: 0, material: iceMat });
-platformBody.addShape(new CANNON.Box(new CANNON.Vec3(150, 1, 150)), new CANNON.Vec3(0, -1, 0));
+const platformShape = new CANNON.Cylinder(arenaRadius, arenaRadius, 2, 64);
+const quat = new CANNON.Quaternion();
+quat.setFromEuler(-Math.PI / 2, 0, 0); // Rotate the Cannon cylinder to lay flat
+platformBody.addShape(platformShape, new CANNON.Vec3(0, -1, 0), quat);
 world.addBody(platformBody);
 
 // Game State
@@ -45,7 +48,7 @@ io.on('connection', (socket) => {
     const color = isRed ? 0xff4757 : 0x1e90ff;
 
     const body = new CANNON.Body({
-        mass: 20, // Heavier base mass
+        mass: 20, 
         shape: new CANNON.Sphere(1.5),
         position: new CANNON.Vec3((Math.random() - 0.5) * 40, 10, (Math.random() - 0.5) * 40),
         material: iceMat, linearDamping: 0.5, angularDamping: 0.5
@@ -80,7 +83,6 @@ setInterval(() => {
         const p = players[id];
         if (p.body.position.y < -5) continue;
 
-        // Increased forces to match heavier mass and larger arena
         const force = 1200 * p.powerMult;
         const torque = 600 * p.powerMult;
         
@@ -117,12 +119,8 @@ setInterval(() => {
                 io.emit('log', `⚡ Power-up consumed!`);
             }
         }
-
-        const distFromCenter = Math.hypot(p.body.position.x, p.body.position.z);
-        if (distFromCenter > arenaRadius && p.body.position.y > 0) {
-            p.body.velocity.set(0, -30, 0); 
-        }
         
+        // Natural death (fell below arena)
         if (p.body.position.y < -30) {
             if (p.isRed) scores.blue++; else scores.red++;
             io.emit('updateScores', scores);
