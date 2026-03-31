@@ -15,15 +15,15 @@ const iceContact = new CANNON.ContactMaterial(iceMat, iceMat, {
 });
 world.addContactMaterial(iceContact);
 
-// --- FIXED: Stable Physics Cylinder ---
+// --- FIXED: Stable Physics Floor ---
 const arenaRadius = 100;
 const platformBody = new CANNON.Body({ mass: 0, material: iceMat });
-// Reduced from 64 to 24 segments. This prevents the Cannon-es collision engine from failing!
-const platformShape = new CANNON.Cylinder(arenaRadius, arenaRadius, 2, 24);
-const quat = new CANNON.Quaternion();
-quat.setFromEuler(-Math.PI / 2, 0, 0); 
-platformBody.addShape(platformShape, new CANNON.Vec3(0, 0, 0), quat);
-platformBody.position.set(0, -1, 0); // Apply offset to the Body, not the Shape
+
+// Use a Box instead of a Cylinder for perfect flat-surface collision
+const platformShape = new CANNON.Box(new CANNON.Vec3(arenaRadius, 1, arenaRadius));
+// No quaternion rotation needed for a Box!
+platformBody.addShape(platformShape, new CANNON.Vec3(0, 0, 0));
+platformBody.position.set(0, -1, 0); 
 world.addBody(platformBody);
 
 // Game State
