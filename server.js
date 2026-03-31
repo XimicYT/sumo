@@ -133,7 +133,7 @@ setInterval(() => {
             p.body.angularVelocity.set(0, 0, 0);
         }
     }
-
+    
     world.step(1 / 60);
 
     const state = { players: {}, powerUp, arenaRadius };
