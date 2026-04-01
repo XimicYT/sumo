@@ -87,7 +87,7 @@ io.on("connection", (socket) => {
 
   const body = new CANNON.Body({
     mass: 20,
-    shape: new CANNON.Sphere(6.0), // MASSIVE PLAYERS: Size 6
+    shape: new CANNON.Sphere(6.0),
     position: new CANNON.Vec3(
       (Math.random() - 0.5) * 40,
       10,
@@ -146,26 +146,48 @@ setInterval(() => {
 
     if (p.body.position.y < -5) continue;
 
-    const force = 800 * p.powerMult; 
-    const torque = 400 * p.powerMult; 
-
-    if (p.inputs.w) {
-      p.body.applyForce(new CANNON.Vec3(0, 0, -force), p.body.position);
-      p.body.applyTorque(new CANNON.Vec3(-torque, 0, 0));
-    }
-    if (p.inputs.s) {
-      p.body.applyForce(new CANNON.Vec3(0, 0, force), p.body.position);
-      p.body.applyTorque(new CANNON.Vec3(torque, 0, 0));
-    }
-    if (p.inputs.a) {
-      p.body.applyForce(new CANNON.Vec3(-force, 0, 0), p.body.position);
-      p.body.applyTorque(new CANNON.Vec3(0, 0, torque));
-    }
-    if (p.inputs.d) {
-      p.body.applyForce(new CANNON.Vec3(force, 0, 0), p.body.position);
-      p.body.applyTorque(new CANNON.Vec3(0, 0, -torque));
+    // --- CAMERA RELATIVE MOVEMENT (SERVER SIDE) ---
+    // 1. Find the opponent to determine the camera facing angle
+    let opponent = null;
+    for (let otherId in players) {
+      if (otherId !== id) { opponent = players[otherId]; break; }
     }
 
+    // Default 'forward' is -Z (world forward) if solo
+    let fz = -1, fx = 0; 
+    if (opponent) {
+      const dx = opponent.body.position.x - p.body.position.x;
+      const dz = opponent.body.position.z - p.body.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.1) {
+        fx = dx / dist; // Normalized forward X
+        fz = dz / dist; // Normalized forward Z
+      }
+    }
+    
+    // Calculate 'right' vector (perpendicular to forward)
+    let rx = fz, rz = -fx; 
+
+    // Sum the inputs based on the relative vectors
+    let moveX = 0, moveZ = 0;
+    if (p.inputs.w) { moveX += fx; moveZ += fz; }
+    if (p.inputs.s) { moveX -= fx; moveZ -= fz; }
+    if (p.inputs.a) { moveX -= rx; moveZ -= rz; }
+    if (p.inputs.d) { moveX += rx; moveZ += rz; }
+
+    const moveLen = Math.hypot(moveX, moveZ);
+    if (moveLen > 0) {
+      moveX /= moveLen; moveZ /= moveLen;
+      
+      const force = 800 * p.powerMult; 
+      const torque = 400 * p.powerMult; 
+
+      p.body.applyForce(new CANNON.Vec3(moveX * force, 0, moveZ * force), p.body.position);
+      // Torque requires swapping and negating axes to roll correctly in the target direction
+      p.body.applyTorque(new CANNON.Vec3(moveZ * torque, 0, -moveX * torque));
+    }
+
+    // Dash (still happens in the direction of current momentum)
     if (p.inputs.space && p.dashCooldown <= 0) {
       const vel = p.body.velocity;
       const dir = new CANNON.Vec3(vel.x, 0, vel.z);
@@ -184,7 +206,6 @@ setInterval(() => {
     if (powerUp) {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
-      // Increased distance check to 8.5 because players are HUGE (radius 6) now
       if (Math.hypot(dx, dz) < 8.5 && p.body.position.y < 5) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
