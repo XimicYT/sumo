@@ -30,7 +30,7 @@ world.addContactMaterial(playerFloorContact);
 
 const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
   friction: 0.1,
-  restitution: 8.67, 
+  restitution: 80.67, 
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
