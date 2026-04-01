@@ -11,17 +11,32 @@ const io = new Server(httpServer, {
 
 // --- SERVER PHYSICS WORLD ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -80, 0) });
-const iceMat = new CANNON.Material("ice");
-const iceContact = new CANNON.ContactMaterial(iceMat, iceMat, {
+
+// --- NEW PHYSICS MATERIALS ---
+const floorMat = new CANNON.Material("floor");
+const playerMat = new CANNON.Material("player");
+
+// 1. Player vs Floor: Low friction (ice), low bounce (so they don't bounce on the ground)
+const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
   friction: 0.1,
-  restitution: 0.8,
+  restitution: 0.1, 
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
-world.addContactMaterial(iceContact);
+world.addContactMaterial(playerFloorContact);
+
+// 2. Player vs Player: Low friction, EXTREME BOUNCE (pool ball effect)
+const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
+  friction: 0.1,
+  restitution: 1.5, // 1.5 adds energy, making collisions explosive!
+  contactEquationStiffness: 1e8,
+  contactEquationRelaxation: 3,
+});
+world.addContactMaterial(playerPlayerContact);
+
 
 const arenaHalfExtent = 100; 
-const platformBody = new CANNON.Body({ mass: 0, material: iceMat });
+const platformBody = new CANNON.Body({ mass: 0, material: floorMat }); // APPLIED FLOOR MAT
 const platformShape = new CANNON.Box(
   new CANNON.Vec3(arenaHalfExtent, 1, arenaHalfExtent),
 );
@@ -76,13 +91,13 @@ io.on("connection", (socket) => {
 
   const body = new CANNON.Body({
     mass: 20,
-    shape: new CANNON.Sphere(3.5), // INCREASED SIZE TO 3.5
+    shape: new CANNON.Sphere(3.5),
     position: new CANNON.Vec3(
       (Math.random() - 0.5) * 40,
       10,
       (Math.random() - 0.5) * 40,
     ),
-    material: iceMat,
+    material: playerMat, // APPLIED PLAYER MAT
     linearDamping: 0.5,
     angularDamping: 0.5,
   });
@@ -135,7 +150,6 @@ setInterval(() => {
 
     if (p.body.position.y < -5) continue;
 
-    // DECREASED SPEED/FORCES MORE
     const force = 800 * p.powerMult; 
     const torque = 400 * p.powerMult; 
 
@@ -161,7 +175,6 @@ setInterval(() => {
       const dir = new CANNON.Vec3(vel.x, 0, vel.z);
       if (dir.length() > 0.1) {
         dir.normalize();
-        // REDUCED DASH IMPULSE TO MATCH SLOWER SPEED
         p.body.applyImpulse(
           new CANNON.Vec3(dir.x * 1000, 0, dir.z * 1000),
           p.body.position,
