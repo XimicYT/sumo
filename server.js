@@ -5,47 +5,49 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
-// Enable CORS so your Netlify frontend can talk to the Render backend
 const io = new Server(server, {
     cors: {
-        origin: "*", // In production, restrict this to your Netlify URL
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
-// Store player states
 const players = {};
 let taggerId = null;
+
+// Safe spawn locations in the corners (away from the center walls)
+const safeSpawns = [
+    { x: 50, y: 50 },   // Top Left
+    { x: 700, y: 50 },  // Top Right
+    { x: 50, y: 500 },  // Bottom Left
+    { x: 700, y: 500 }  // Bottom Right
+];
 
 io.on('connection', (socket) => {
     console.log(`Player connected: ${socket.id}`);
 
-    // Assign roles. First player is tagger.
     if (!taggerId) taggerId = socket.id;
 
-    // Initialize player at a random starting spot
+    // Pick a random safe spawn point
+    const spawn = safeSpawns[Math.floor(Math.random() * safeSpawns.length)];
+
     players[socket.id] = {
-        x: Math.random() * 400 + 100,
-        y: Math.random() * 400 + 100,
+        x: spawn.x,
+        y: spawn.y,
         isTagger: socket.id === taggerId
     };
 
-    // Send the current game state to the new player
     socket.emit('init', { players, id: socket.id });
-    // Tell everyone else a new player joined
     socket.broadcast.emit('playerJoined', { id: socket.id, player: players[socket.id] });
 
-    // Handle incoming movement
     socket.on('move', (data) => {
         if (players[socket.id]) {
             players[socket.id].x = data.x;
             players[socket.id].y = data.y;
-            // Broadcast the update to all OTHER players
             socket.broadcast.emit('playerMoved', { id: socket.id, x: data.x, y: data.y });
         }
     });
 
-    // Handle tagging logic
     socket.on('tag', (taggedId) => {
         if (players[socket.id] && players[socket.id].isTagger && players[taggedId]) {
             players[socket.id].isTagger = false;
@@ -59,7 +61,6 @@ io.on('connection', (socket) => {
         console.log(`Player disconnected: ${socket.id}`);
         delete players[socket.id];
         
-        // Reassign tagger if the tagger left
         if (socket.id === taggerId) {
             const remainingIds = Object.keys(players);
             taggerId = remainingIds.length > 0 ? remainingIds[0] : null;
