@@ -20,15 +20,14 @@ const iceContact = new CANNON.ContactMaterial(iceMat, iceMat, {
 });
 world.addContactMaterial(iceContact);
 
-// --- FIXED: Stable Physics Floor ---
-const arenaRadius = 100;
+// --- FIXED: True Square Arena Bounds ---
+// CANNON.Box uses half-extents. 100 means a 200x200 wide square.
+const arenaHalfExtent = 100; 
 const platformBody = new CANNON.Body({ mass: 0, material: iceMat });
-
-// Use a Box instead of a Cylinder for perfect flat-surface collision
 const platformShape = new CANNON.Box(
-  new CANNON.Vec3(arenaRadius, 1, arenaRadius),
+  new CANNON.Vec3(arenaHalfExtent, 1, arenaHalfExtent),
 );
-// No quaternion rotation needed for a Box!
+
 platformBody.addShape(platformShape, new CANNON.Vec3(0, 0, 0));
 platformBody.position.set(0, -1, 0);
 world.addBody(platformBody);
@@ -41,14 +40,16 @@ let powerUp = null;
 function spawnPowerUp() {
   if (powerUp) return;
   const types = ["speed", "mass", "repel"];
+  // Keep powerups within the safe playable area (slightly inside the edges)
+  const spawnLimit = arenaHalfExtent * 0.8; 
   powerUp = {
     id: Math.random().toString(36).substr(2, 9),
     type: types[Math.floor(Math.random() * types.length)],
-    x: (Math.random() - 0.5) * (arenaRadius * 1.5),
+    x: (Math.random() - 0.5) * spawnLimit * 2,
     y: 2,
-    z: (Math.random() - 0.5) * (arenaRadius * 1.5),
+    z: (Math.random() - 0.5) * spawnLimit * 2,
   };
-  io.emit("log", `🟢 ${powerUp.type.toUpperCase()} Power-Up dropped!`);
+  io.emit("log", `⚡ ${powerUp.type.toUpperCase()} Power-Up dropped!`);
 }
 setInterval(spawnPowerUp, 10000);
 
@@ -79,7 +80,7 @@ io.on("connection", (socket) => {
     dashCooldown: 0,
   };
 
-  socket.emit("init", { id: socket.id, color, scores, arenaRadius });
+  socket.emit("init", { id: socket.id, color, scores, arenaHalfExtent });
   io.emit("log", "A challenger appears!");
 
   socket.on("clientInput", (keys) => {
@@ -105,7 +106,7 @@ setInterval(() => {
       if (p.isRed) scores.blue++;
       else scores.red++;
       io.emit("updateScores", scores);
-      io.emit("log", "🥊 Ring out!");
+      io.emit("log", "💥 Ring out!");
 
       p.body.position.set(
         (Math.random() - 0.5) * 40,
@@ -114,23 +115,15 @@ setInterval(() => {
       );
       p.body.velocity.set(0, 0, 0);
       p.body.angularVelocity.set(0, 0, 0);
-      continue; // Skip the rest of this frame
+      continue; 
     }
 
-    // 2. THEN skip applying forces if they are mid-fall
+    // 2. Skip applying forces if they are mid-fall
     if (p.body.position.y < -5) continue;
 
-    // 3. Stop them from standing on the invisible Box corners
-    const distFromCenter = Math.hypot(p.body.position.x, p.body.position.z);
-    if (distFromCenter > arenaRadius && p.body.position.y > -2) {
-      p.body.position.y = -6; // Force them to fall
-      p.body.velocity.y = -10;
-    }
+    const force = 2500 * p.powerMult; 
+    const torque = 1200 * p.powerMult; 
 
-    const force = 2500 * p.powerMult; // Was 1200
-    const torque = 1200 * p.powerMult; // Was 600
-
-    // ... (Keep your existing W, A, S, D, and Spacebar logic here) ...
     if (p.inputs.w) {
       p.body.applyForce(new CANNON.Vec3(0, 0, -force), p.body.position);
       p.body.applyTorque(new CANNON.Vec3(-torque, 0, 0));
@@ -156,7 +149,7 @@ setInterval(() => {
         p.body.applyImpulse(
           new CANNON.Vec3(dir.x * 2500, 0, dir.z * 2500),
           p.body.position,
-        ); // Was 1200
+        ); 
         p.dashCooldown = 120;
         io.emit("log", "💨 DASH!");
       }
@@ -184,14 +177,14 @@ setInterval(() => {
           p.body.updateMassProperties();
         }, 5000);
         powerUp = null;
-        io.emit("log", `⚡ Power-up consumed!`);
+        io.emit("log", `📦 Power-up consumed!`);
       }
     }
   }
 
   world.step(1 / 60);
 
-  const state = { players: {}, powerUp, arenaRadius };
+  const state = { players: {}, powerUp, arenaHalfExtent };
   for (let id in players) {
     state.players[id] = {
       x: players[id].body.position.x,
