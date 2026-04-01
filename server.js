@@ -30,7 +30,7 @@ world.addContactMaterial(playerFloorContact);
 
 const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
   friction: 0.1,
-  restitution: 3.0, 
+  restitution: 8.67, 
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
@@ -180,8 +180,8 @@ setInterval(() => {
     if (moveLen > 0) {
       moveX /= moveLen; moveZ /= moveLen;
       
-      const force = 800 * p.powerMult; 
-      const torque = 400 * p.powerMult; 
+      const force = 1200 * p.powerMult; 
+      const torque = 600 * p.powerMult; 
 
       p.body.applyForce(new CANNON.Vec3(moveX * force, 0, moveZ * force), p.body.position);
       p.body.applyTorque(new CANNON.Vec3(moveZ * torque, 0, -moveX * torque));
