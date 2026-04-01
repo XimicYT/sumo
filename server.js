@@ -9,6 +9,12 @@ const io = new Server(httpServer, {
   cors: { origin: "*", methods: ["GET", "POST"] },
 });
 
+// --- HEALTH CHECK ENDPOINT ---
+// Used by cron jobs (like cron-job.org or UptimeRobot) to keep the Render server awake.
+app.get("/health", (req, res) => {
+  res.status(200).send("OK");
+});
+
 // --- SERVER PHYSICS WORLD ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -80, 0) });
 
@@ -163,7 +169,7 @@ setInterval(() => {
       }
     }
     
-    // FIXED: Correct perpendicular vector for 'Right'
+    // Correct perpendicular vector for 'Right'
     let rx = -fz, rz = fx; 
 
     let moveX = 0, moveZ = 0;
