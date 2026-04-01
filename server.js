@@ -146,29 +146,26 @@ setInterval(() => {
 
     if (p.body.position.y < -5) continue;
 
-    // --- CAMERA RELATIVE MOVEMENT (SERVER SIDE) ---
-    // 1. Find the opponent to determine the camera facing angle
+    // --- CAMERA RELATIVE MOVEMENT ---
     let opponent = null;
     for (let otherId in players) {
       if (otherId !== id) { opponent = players[otherId]; break; }
     }
 
-    // Default 'forward' is -Z (world forward) if solo
     let fz = -1, fx = 0; 
     if (opponent) {
       const dx = opponent.body.position.x - p.body.position.x;
       const dz = opponent.body.position.z - p.body.position.z;
       const dist = Math.hypot(dx, dz);
       if (dist > 0.1) {
-        fx = dx / dist; // Normalized forward X
-        fz = dz / dist; // Normalized forward Z
+        fx = dx / dist; 
+        fz = dz / dist; 
       }
     }
     
-    // Calculate 'right' vector (perpendicular to forward)
-    let rx = fz, rz = -fx; 
+    // FIXED: Correct perpendicular vector for 'Right'
+    let rx = -fz, rz = fx; 
 
-    // Sum the inputs based on the relative vectors
     let moveX = 0, moveZ = 0;
     if (p.inputs.w) { moveX += fx; moveZ += fz; }
     if (p.inputs.s) { moveX -= fx; moveZ -= fz; }
@@ -183,11 +180,9 @@ setInterval(() => {
       const torque = 400 * p.powerMult; 
 
       p.body.applyForce(new CANNON.Vec3(moveX * force, 0, moveZ * force), p.body.position);
-      // Torque requires swapping and negating axes to roll correctly in the target direction
       p.body.applyTorque(new CANNON.Vec3(moveZ * torque, 0, -moveX * torque));
     }
 
-    // Dash (still happens in the direction of current momentum)
     if (p.inputs.space && p.dashCooldown <= 0) {
       const vel = p.body.velocity;
       const dir = new CANNON.Vec3(vel.x, 0, vel.z);
