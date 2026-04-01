@@ -50,7 +50,6 @@ function spawnPowerUp() {
 }
 setInterval(spawnPowerUp, 10000);
 
-// --- Cleanup Helper to prevent ghosts ---
 function removePlayer(id) {
   if (players[id]) {
     world.removeBody(players[id].body);
@@ -59,15 +58,12 @@ function removePlayer(id) {
   }
 }
 
-// --- Heartbeat Sweeper ---
-// Checks every 2 seconds if a player hasn't sent a heartbeat in 4 seconds
 setInterval(() => {
   const now = Date.now();
   for (let id in players) {
     if (now - players[id].lastHeartbeat > 4000) {
       io.emit("log", "Player timed out.");
       removePlayer(id);
-      // Force socket disconnect if it's still somehow attached
       const socket = io.sockets.sockets.get(id);
       if (socket) socket.disconnect(true);
     }
@@ -80,7 +76,7 @@ io.on("connection", (socket) => {
 
   const body = new CANNON.Body({
     mass: 20,
-    shape: new CANNON.Sphere(2.5), // INCREASED SIZE
+    shape: new CANNON.Sphere(3.5), // INCREASED SIZE TO 3.5
     position: new CANNON.Vec3(
       (Math.random() - 0.5) * 40,
       10,
@@ -99,7 +95,7 @@ io.on("connection", (socket) => {
     inputs: { w: false, a: false, s: false, d: false, space: false },
     powerMult: 1,
     dashCooldown: 0,
-    lastHeartbeat: Date.now(), // Track connection health
+    lastHeartbeat: Date.now(),
   };
 
   socket.emit("init", { id: socket.id, color, scores, arenaHalfExtent });
@@ -113,9 +109,7 @@ io.on("connection", (socket) => {
     if (players[socket.id]) players[socket.id].lastHeartbeat = Date.now();
   });
 
-  socket.on("disconnect", () => {
-    removePlayer(socket.id);
-  });
+  socket.on("disconnect", () => removePlayer(socket.id));
 });
 
 // --- MAIN GAME LOOP (60 FPS) ---
@@ -141,9 +135,9 @@ setInterval(() => {
 
     if (p.body.position.y < -5) continue;
 
-    // DECREASED SPEED/FORCES
-    const force = 1200 * p.powerMult; 
-    const torque = 600 * p.powerMult; 
+    // DECREASED SPEED/FORCES MORE
+    const force = 800 * p.powerMult; 
+    const torque = 400 * p.powerMult; 
 
     if (p.inputs.w) {
       p.body.applyForce(new CANNON.Vec3(0, 0, -force), p.body.position);
@@ -167,9 +161,9 @@ setInterval(() => {
       const dir = new CANNON.Vec3(vel.x, 0, vel.z);
       if (dir.length() > 0.1) {
         dir.normalize();
-        // REDUCED DASH IMPULSE
+        // REDUCED DASH IMPULSE TO MATCH SLOWER SPEED
         p.body.applyImpulse(
-          new CANNON.Vec3(dir.x * 1500, 0, dir.z * 1500),
+          new CANNON.Vec3(dir.x * 1000, 0, dir.z * 1000),
           p.body.position,
         ); 
         p.dashCooldown = 120;
@@ -181,8 +175,7 @@ setInterval(() => {
     if (powerUp) {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
-      // Increased pickup radius due to larger players
-      if (Math.hypot(dx, dz) < 4.5 && p.body.position.y < 5) {
+      if (Math.hypot(dx, dz) < 5.5 && p.body.position.y < 5) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
         if (powerUp.type === "repel") {
