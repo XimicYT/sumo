@@ -206,8 +206,8 @@ setInterval(() => {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
       
-      // INCREASED PICKUP RADIUS TO 12.0
-      if (Math.hypot(dx, dz) < 12.0 && p.body.position.y < 5) {
+      // FIXED: Increased Y-axis check to 15 to account for massive player size!
+      if (Math.hypot(dx, dz) < 12.0 && p.body.position.y < 15) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
         if (powerUp.type === "repel") {
