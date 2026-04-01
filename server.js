@@ -10,7 +10,6 @@ const io = new Server(httpServer, {
 });
 
 // --- HEALTH CHECK ENDPOINT ---
-// Used by cron jobs (like cron-job.org or UptimeRobot) to keep the Render server awake.
 app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
@@ -169,7 +168,6 @@ setInterval(() => {
       }
     }
     
-    // Correct perpendicular vector for 'Right'
     let rx = -fz, rz = fx; 
 
     let moveX = 0, moveZ = 0;
@@ -207,7 +205,9 @@ setInterval(() => {
     if (powerUp) {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
-      if (Math.hypot(dx, dz) < 8.5 && p.body.position.y < 5) {
+      
+      // INCREASED PICKUP RADIUS TO 12.0
+      if (Math.hypot(dx, dz) < 12.0 && p.body.position.y < 5) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
         if (powerUp.type === "repel") {
