@@ -12,11 +12,11 @@ const io = new Server(httpServer, {
 // --- SERVER PHYSICS WORLD ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -80, 0) });
 
-// --- NEW PHYSICS MATERIALS ---
+// --- PHYSICS MATERIALS ---
 const floorMat = new CANNON.Material("floor");
 const playerMat = new CANNON.Material("player");
 
-// 1. Player vs Floor: Low friction (ice), low bounce (so they don't bounce on the ground)
+// 1. Player vs Floor: Low friction (ice), low bounce
 const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
   friction: 0.1,
   restitution: 0.1, 
@@ -25,10 +25,10 @@ const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
 });
 world.addContactMaterial(playerFloorContact);
 
-// 2. Player vs Player: Low friction, EXTREME BOUNCE (pool ball effect)
+// 2. Player vs Player: Low friction, EXTREME BOUNCE (2.5x)
 const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
   friction: 0.1,
-  restitution: 1.5, // 1.5 adds energy, making collisions explosive!
+  restitution: 2.5, // INCREASED TO 2.5
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
@@ -36,7 +36,7 @@ world.addContactMaterial(playerPlayerContact);
 
 
 const arenaHalfExtent = 100; 
-const platformBody = new CANNON.Body({ mass: 0, material: floorMat }); // APPLIED FLOOR MAT
+const platformBody = new CANNON.Body({ mass: 0, material: floorMat }); 
 const platformShape = new CANNON.Box(
   new CANNON.Vec3(arenaHalfExtent, 1, arenaHalfExtent),
 );
@@ -97,7 +97,7 @@ io.on("connection", (socket) => {
       10,
       (Math.random() - 0.5) * 40,
     ),
-    material: playerMat, // APPLIED PLAYER MAT
+    material: playerMat, 
     linearDamping: 0.5,
     angularDamping: 0.5,
   });
