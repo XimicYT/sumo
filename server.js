@@ -12,11 +12,9 @@ const io = new Server(httpServer, {
 // --- SERVER PHYSICS WORLD ---
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -80, 0) });
 
-// --- PHYSICS MATERIALS ---
 const floorMat = new CANNON.Material("floor");
 const playerMat = new CANNON.Material("player");
 
-// 1. Player vs Floor: Low friction (ice), low bounce
 const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
   friction: 0.1,
   restitution: 0.1, 
@@ -25,15 +23,13 @@ const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
 });
 world.addContactMaterial(playerFloorContact);
 
-// 2. Player vs Player: Low friction, EXTREME BOUNCE (3.0x)
 const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
   friction: 0.1,
-  restitution: 3.0, // INCREASED TO 3.0
+  restitution: 3.0, 
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
 world.addContactMaterial(playerPlayerContact);
-
 
 const arenaHalfExtent = 100; 
 const platformBody = new CANNON.Body({ mass: 0, material: floorMat }); 
@@ -91,7 +87,7 @@ io.on("connection", (socket) => {
 
   const body = new CANNON.Body({
     mass: 20,
-    shape: new CANNON.Sphere(3.5),
+    shape: new CANNON.Sphere(6.0), // MASSIVE PLAYERS: Size 6
     position: new CANNON.Vec3(
       (Math.random() - 0.5) * 40,
       10,
@@ -188,7 +184,8 @@ setInterval(() => {
     if (powerUp) {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
-      if (Math.hypot(dx, dz) < 5.5 && p.body.position.y < 5) {
+      // Increased distance check to 8.5 because players are HUGE (radius 6) now
+      if (Math.hypot(dx, dz) < 8.5 && p.body.position.y < 5) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
         if (powerUp.type === "repel") {
