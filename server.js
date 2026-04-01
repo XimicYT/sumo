@@ -25,10 +25,10 @@ const playerFloorContact = new CANNON.ContactMaterial(floorMat, playerMat, {
 });
 world.addContactMaterial(playerFloorContact);
 
-// 2. Player vs Player: Low friction, EXTREME BOUNCE (2.5x)
+// 2. Player vs Player: Low friction, EXTREME BOUNCE (3.0x)
 const playerPlayerContact = new CANNON.ContactMaterial(playerMat, playerMat, {
   friction: 0.1,
-  restitution: 2.5, // INCREASED TO 2.5
+  restitution: 3.0, // INCREASED TO 3.0
   contactEquationStiffness: 1e8,
   contactEquationRelaxation: 3,
 });
