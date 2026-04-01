@@ -20,8 +20,6 @@ const iceContact = new CANNON.ContactMaterial(iceMat, iceMat, {
 });
 world.addContactMaterial(iceContact);
 
-// --- FIXED: True Square Arena Bounds ---
-// CANNON.Box uses half-extents. 100 means a 200x200 wide square.
 const arenaHalfExtent = 100; 
 const platformBody = new CANNON.Body({ mass: 0, material: iceMat });
 const platformShape = new CANNON.Box(
@@ -40,7 +38,6 @@ let powerUp = null;
 function spawnPowerUp() {
   if (powerUp) return;
   const types = ["speed", "mass", "repel"];
-  // Keep powerups within the safe playable area (slightly inside the edges)
   const spawnLimit = arenaHalfExtent * 0.8; 
   powerUp = {
     id: Math.random().toString(36).substr(2, 9),
@@ -53,13 +50,37 @@ function spawnPowerUp() {
 }
 setInterval(spawnPowerUp, 10000);
 
+// --- Cleanup Helper to prevent ghosts ---
+function removePlayer(id) {
+  if (players[id]) {
+    world.removeBody(players[id].body);
+    delete players[id];
+    io.emit("playerLeft", id);
+  }
+}
+
+// --- Heartbeat Sweeper ---
+// Checks every 2 seconds if a player hasn't sent a heartbeat in 4 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (let id in players) {
+    if (now - players[id].lastHeartbeat > 4000) {
+      io.emit("log", "Player timed out.");
+      removePlayer(id);
+      // Force socket disconnect if it's still somehow attached
+      const socket = io.sockets.sockets.get(id);
+      if (socket) socket.disconnect(true);
+    }
+  }
+}, 2000);
+
 io.on("connection", (socket) => {
   const isRed = Object.keys(players).length % 2 === 0;
   const color = isRed ? 0xff4757 : 0x1e90ff;
 
   const body = new CANNON.Body({
     mass: 20,
-    shape: new CANNON.Sphere(1.5),
+    shape: new CANNON.Sphere(2.5), // INCREASED SIZE
     position: new CANNON.Vec3(
       (Math.random() - 0.5) * 40,
       10,
@@ -78,6 +99,7 @@ io.on("connection", (socket) => {
     inputs: { w: false, a: false, s: false, d: false, space: false },
     powerMult: 1,
     dashCooldown: 0,
+    lastHeartbeat: Date.now(), // Track connection health
   };
 
   socket.emit("init", { id: socket.id, color, scores, arenaHalfExtent });
@@ -87,12 +109,12 @@ io.on("connection", (socket) => {
     if (players[socket.id]) players[socket.id].inputs = keys;
   });
 
+  socket.on("heartbeat", () => {
+    if (players[socket.id]) players[socket.id].lastHeartbeat = Date.now();
+  });
+
   socket.on("disconnect", () => {
-    if (players[socket.id]) {
-      world.removeBody(players[socket.id].body);
-      delete players[socket.id];
-      io.emit("playerLeft", socket.id);
-    }
+    removePlayer(socket.id);
   });
 });
 
@@ -101,7 +123,6 @@ setInterval(() => {
   for (let id in players) {
     const p = players[id];
 
-    // 1. Check for respawn FIRST
     if (p.body.position.y < -30) {
       if (p.isRed) scores.blue++;
       else scores.red++;
@@ -118,11 +139,11 @@ setInterval(() => {
       continue; 
     }
 
-    // 2. Skip applying forces if they are mid-fall
     if (p.body.position.y < -5) continue;
 
-    const force = 2500 * p.powerMult; 
-    const torque = 1200 * p.powerMult; 
+    // DECREASED SPEED/FORCES
+    const force = 1200 * p.powerMult; 
+    const torque = 600 * p.powerMult; 
 
     if (p.inputs.w) {
       p.body.applyForce(new CANNON.Vec3(0, 0, -force), p.body.position);
@@ -146,8 +167,9 @@ setInterval(() => {
       const dir = new CANNON.Vec3(vel.x, 0, vel.z);
       if (dir.length() > 0.1) {
         dir.normalize();
+        // REDUCED DASH IMPULSE
         p.body.applyImpulse(
-          new CANNON.Vec3(dir.x * 2500, 0, dir.z * 2500),
+          new CANNON.Vec3(dir.x * 1500, 0, dir.z * 1500),
           p.body.position,
         ); 
         p.dashCooldown = 120;
@@ -159,7 +181,8 @@ setInterval(() => {
     if (powerUp) {
       const dx = p.body.position.x - powerUp.x;
       const dz = p.body.position.z - powerUp.z;
-      if (Math.hypot(dx, dz) < 3.5 && p.body.position.y < 5) {
+      // Increased pickup radius due to larger players
+      if (Math.hypot(dx, dz) < 4.5 && p.body.position.y < 5) {
         if (powerUp.type === "speed") p.powerMult = 2;
         if (powerUp.type === "mass") p.body.mass = 60;
         if (powerUp.type === "repel") {
