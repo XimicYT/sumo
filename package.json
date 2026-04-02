@@ -1,7 +1,7 @@
 {
-  "name": "grapple-racer-multiplayer",
+  "name": "screenshare-signaling-server",
   "version": "1.0.0",
-  "description": "Multiplayer Server for Grapple Racer",
+  "description": "WebRTC Signaling Server for Screensharing",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,5 +10,8 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "socket.io": "^4.7.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
