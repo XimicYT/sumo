@@ -39,8 +39,7 @@ io.on('connection', (socket) => {
         let safeUsername = username ? username.substring(0, 12) : `Pilot-${Math.floor(Math.random()*1000)}`;
 
         rooms[code].players[socket.id] = {
-            username: safeUsername,
-            x: 0, y: 0, vx: 0, vy: 0,
+            username: safeUsername, x: 0, y: 0, vx: 0, vy: 0,
             color: colors[Math.floor(Math.random() * colors.length)],
             trail: [], lastHeartbeat: Date.now(), finished: false, place: 0
         };
@@ -57,9 +56,7 @@ io.on('connection', (socket) => {
                 return;
             }
             
-            room.state = 'racing';
-            room.settings = settings;
-            room.leaderboard = [];
+            room.state = 'racing'; room.settings = settings; room.leaderboard = [];
             
             Object.values(room.players).forEach(p => {
                 p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false; p.place = 0;
@@ -78,12 +75,9 @@ io.on('connection', (socket) => {
                 room.players[socket.id].place = room.leaderboard.length;
                 
                 io.to(currentRoom).emit('playerFinished', { 
-                    id: socket.id, 
-                    place: room.leaderboard.length,
-                    username: room.players[socket.id].username 
+                    id: socket.id, place: room.leaderboard.length, username: room.players[socket.id].username 
                 });
 
-                // Auto-return to lobby if everyone finished
                 if (room.leaderboard.length >= Object.keys(room.players).length) {
                     io.to(currentRoom).emit('allFinished');
                 }
@@ -91,11 +85,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Seamlessly transition back to lobby phase
     socket.on('returnToLobby', () => {
         if (currentRoom && rooms[currentRoom] && rooms[currentRoom].host === socket.id) {
-            rooms[currentRoom].state = 'lobby';
-            rooms[currentRoom].leaderboard = [];
+            rooms[currentRoom].state = 'lobby'; rooms[currentRoom].leaderboard = [];
             Object.values(rooms[currentRoom].players).forEach(p => {
                 p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false; p.place = 0;
             });
