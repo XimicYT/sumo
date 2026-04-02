@@ -8,43 +8,28 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
-});
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-// Room State Management
 const rooms = {};
-const colors = ['#f2a900', '#66fcf1', '#ff4655', '#a64d79', '#4CAF50', '#9d4edd'];
+const colors = ['#f2a900', '#66fcf1', '#ff4655', '#a64d79', '#4CAF50', '#9d4edd', '#ff00ff', '#00ffff'];
 
 io.on('connection', (socket) => {
     console.log(`[+] Connection opened: ${socket.id}`);
     let currentRoom = null;
 
-    // --- ROOM SYSTEM ---
     socket.on('createRoom', () => {
         let code;
         do { code = Math.floor(100 + Math.random() * 900).toString(); } while (rooms[code]);
 
-        rooms[code] = { 
-            host: socket.id, 
-            state: 'lobby', // 'lobby' or 'racing'
-            settings: null,
-            players: {},
-            leaderboard: []
-        };
+        rooms[code] = { host: socket.id, state: 'lobby', settings: null, players: {}, leaderboard: [] };
         joinRoomLogic(socket, code);
     });
 
     socket.on('joinRoom', (code) => {
         if (rooms[code]) {
-            if (rooms[code].state === 'racing') {
-                socket.emit('roomError', 'Race already in progress!');
-            } else {
-                joinRoomLogic(socket, code);
-            }
-        } else {
-            socket.emit('roomError', 'Room not found! Check the 3-digit code.');
-        }
+            if (rooms[code].state === 'racing') socket.emit('roomError', 'Race already in progress!');
+            else joinRoomLogic(socket, code);
+        } else socket.emit('roomError', 'Room not found! Check the 3-digit code.');
     });
 
     function joinRoomLogic(socket, code) {
@@ -54,20 +39,13 @@ io.on('connection', (socket) => {
         rooms[code].players[socket.id] = {
             x: 0, y: 0, vx: 0, vy: 0,
             color: colors[Math.floor(Math.random() * colors.length)],
-            trail: [],
-            lastHeartbeat: Date.now(),
-            finished: false
+            trail: [], lastHeartbeat: Date.now(), finished: false
         };
 
-        socket.emit('roomJoined', { 
-            code, 
-            players: rooms[code].players, 
-            hostId: rooms[code].host 
-        });
+        socket.emit('roomJoined', { code, players: rooms[code].players, hostId: rooms[code].host });
         socket.broadcast.to(code).emit('newPlayer', { id: socket.id, player: rooms[code].players[socket.id] });
     }
 
-    // --- HOST RACE CONTROLS ---
     socket.on('startRace', (settings) => {
         if (currentRoom && rooms[currentRoom].host === socket.id) {
             let room = rooms[currentRoom];
@@ -80,7 +58,6 @@ io.on('connection', (socket) => {
             room.settings = settings;
             room.leaderboard = [];
             
-            // Reset all players
             Object.values(room.players).forEach(p => {
                 p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false;
             });
@@ -100,24 +77,20 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- MOVEMENT & INTERPOLATION DATA ---
     socket.on('playerMovement', (data) => {
         if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
             let p = rooms[currentRoom].players[socket.id];
-            p.x = data.x; p.y = data.y;
-            p.vx = data.vx; p.vy = data.vy; // Pass velocity for client-side prediction
-            p.trail = data.trail;
+            p.x = data.x; p.y = data.y; p.vx = data.vx; p.vy = data.vy; p.trail = data.trail;
         }
     });
 
-    // --- HEARTBEATS & DISCONNECTS ---
     socket.on('heartbeat_pong', () => {
         if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
             rooms[currentRoom].players[socket.id].lastHeartbeat = Date.now();
         }
     });
 
-    socket.on('disconnect', () => { handleDisconnect(socket.id, currentRoom); });
+    socket.on('disconnect', () => handleDisconnect(socket.id, currentRoom));
 });
 
 function handleDisconnect(socketId, roomCode) {
@@ -126,22 +99,20 @@ function handleDisconnect(socketId, roomCode) {
         delete room.players[socketId];
         io.to(roomCode).emit('playerDisconnected', socketId);
 
-        if (Object.keys(room.players).length === 0) {
-            delete rooms[roomCode];
-        } else if (room.host === socketId) {
-            // Reassign host
+        if (Object.keys(room.players).length === 0) delete rooms[roomCode];
+        else if (room.host === socketId) {
             room.host = Object.keys(room.players)[0];
             io.to(roomCode).emit('newHost', room.host);
         }
     }
 }
 
-// 30 FPS Broadcast Tick
+// 30 FPS Server Tick
 setInterval(() => {
     const now = Date.now();
     for (let code in rooms) {
         let players = rooms[code].players;
-        io.to(code).emit('stateUpdate', players);
+        io.to(code).emit('stateUpdate', { timestamp: now, players: players });
 
         for (let id in players) {
             if (now - players[id].lastHeartbeat > 10000) {
@@ -153,9 +124,7 @@ setInterval(() => {
     }
 }, 1000 / 30);
 
-setInterval(() => { io.emit('heartbeat_ping'); }, 3000);
+setInterval(() => io.emit('heartbeat_ping'), 3000);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
