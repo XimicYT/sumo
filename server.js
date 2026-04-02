@@ -8,15 +8,46 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// Enable Connection State Recovery to survive brief network drops
+const io = new Server(server, { 
+    cors: { origin: "*", methods: ["GET", "POST"] },
+    connectionStateRecovery: {
+        maxDisconnectionDuration: 30000, 
+        skipMiddlewares: true
+    }
+});
 
 const rooms = {};
 const colors = ['#f2a900', '#66fcf1', '#ff4655', '#a64d79', '#4CAF50', '#9d4edd', '#ff00ff', '#00ffff'];
 
+// Hold players in-memory for a short time after disconnect
+const disconnectGraceTimers = {};
+const GRACE_PERIOD_MS = 15000;
+
 io.on('connection', (socket) => {
-    console.log(`[+] Connection opened: ${socket.id}`);
     let currentRoom = null;
 
+    // --- RECOVERY LOGIC ---
+    // If the socket successfully recovered from a brief drop, restore their room context
+    if (socket.recovered) {
+        console.log(`[~] Connection recovered seamlessly: ${socket.id}`);
+        for (let code in rooms) {
+            if (rooms[code].players[socket.id]) {
+                currentRoom = code;
+                break;
+            }
+        }
+        // Cancel their deletion timer
+        if (disconnectGraceTimers[socket.id]) {
+            clearTimeout(disconnectGraceTimers[socket.id]);
+            delete disconnectGraceTimers[socket.id];
+        }
+    } else {
+        console.log(`[+] New connection opened: ${socket.id}`);
+    }
+
+    // --- ROOM LOGIC ---
     socket.on('createRoom', (username) => {
         let code;
         do { code = Math.floor(100 + Math.random() * 900).toString(); } while (rooms[code]);
@@ -48,6 +79,7 @@ io.on('connection', (socket) => {
         socket.broadcast.to(code).emit('newPlayer', { id: socket.id, player: rooms[code].players[socket.id] });
     }
 
+    // --- GAME ACTIONS ---
     socket.on('startRace', (settings) => {
         if (currentRoom && rooms[currentRoom].host === socket.id) {
             let room = rooms[currentRoom];
@@ -105,10 +137,23 @@ io.on('connection', (socket) => {
     socket.on('heartbeat_pong', () => {
         if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
             rooms[currentRoom].players[socket.id].lastHeartbeat = Date.now();
+            if (disconnectGraceTimers[socket.id]) {
+                clearTimeout(disconnectGraceTimers[socket.id]);
+                delete disconnectGraceTimers[socket.id];
+            }
         }
     });
 
-    socket.on('disconnect', () => handleDisconnect(socket.id, currentRoom));
+    // --- GRACEFUL DISCONNECT ---
+    socket.on('disconnect', () => {
+        console.log(`[-] Connection dropped: ${socket.id}. Starting grace period...`);
+        // Start grace period instead of instant kick
+        disconnectGraceTimers[socket.id] = setTimeout(() => {
+            console.log(`[!] Grace period expired for: ${socket.id}. Removing from server.`);
+            handleDisconnect(socket.id, currentRoom);
+            delete disconnectGraceTimers[socket.id];
+        }, GRACE_PERIOD_MS);
+    });
 });
 
 function handleDisconnect(socketId, roomCode) {
@@ -133,10 +178,15 @@ setInterval(() => {
         io.to(code).emit('stateUpdate', { timestamp: now, players: players });
 
         for (let id in players) {
-            if (now - players[id].lastHeartbeat > 10000) {
+            // Heartbeat failure check (20s) in case TCP gets stuck but doesn't throw a disconnect event
+            if (now - players[id].lastHeartbeat > 20000) {
+                if (disconnectGraceTimers[id]) {
+                    clearTimeout(disconnectGraceTimers[id]);
+                    delete disconnectGraceTimers[id];
+                }
+                handleDisconnect(id, code);
                 const socket = io.sockets.sockets.get(id);
                 if (socket) socket.disconnect(true);
-                else handleDisconnect(id, code);
             }
         }
     }
