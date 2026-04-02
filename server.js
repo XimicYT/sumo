@@ -17,29 +17,32 @@ io.on('connection', (socket) => {
     console.log(`[+] Connection opened: ${socket.id}`);
     let currentRoom = null;
 
-    socket.on('createRoom', () => {
+    socket.on('createRoom', (username) => {
         let code;
         do { code = Math.floor(100 + Math.random() * 900).toString(); } while (rooms[code]);
 
         rooms[code] = { host: socket.id, state: 'lobby', settings: null, players: {}, leaderboard: [] };
-        joinRoomLogic(socket, code);
+        joinRoomLogic(socket, code, username);
     });
 
-    socket.on('joinRoom', (code) => {
-        if (rooms[code]) {
-            if (rooms[code].state === 'racing') socket.emit('roomError', 'Race already in progress!');
-            else joinRoomLogic(socket, code);
+    socket.on('joinRoom', (data) => {
+        if (rooms[data.code]) {
+            if (rooms[data.code].state === 'racing') socket.emit('roomError', 'Race already in progress! Wait for them to finish.');
+            else joinRoomLogic(socket, data.code, data.username);
         } else socket.emit('roomError', 'Room not found! Check the 3-digit code.');
     });
 
-    function joinRoomLogic(socket, code) {
+    function joinRoomLogic(socket, code, username) {
         currentRoom = code;
         socket.join(code);
         
+        let safeUsername = username ? username.substring(0, 12) : `Pilot-${Math.floor(Math.random()*1000)}`;
+
         rooms[code].players[socket.id] = {
+            username: safeUsername,
             x: 0, y: 0, vx: 0, vy: 0,
             color: colors[Math.floor(Math.random() * colors.length)],
-            trail: [], lastHeartbeat: Date.now(), finished: false
+            trail: [], lastHeartbeat: Date.now(), finished: false, place: 0
         };
 
         socket.emit('roomJoined', { code, players: rooms[code].players, hostId: rooms[code].host });
@@ -59,7 +62,7 @@ io.on('connection', (socket) => {
             room.leaderboard = [];
             
             Object.values(room.players).forEach(p => {
-                p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false;
+                p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false; p.place = 0;
             });
 
             io.to(currentRoom).emit('raceInitializing', settings);
@@ -72,8 +75,31 @@ io.on('connection', (socket) => {
             if (!room.players[socket.id].finished) {
                 room.players[socket.id].finished = true;
                 room.leaderboard.push(socket.id);
-                io.to(currentRoom).emit('playerFinished', { id: socket.id, place: room.leaderboard.length });
+                room.players[socket.id].place = room.leaderboard.length;
+                
+                io.to(currentRoom).emit('playerFinished', { 
+                    id: socket.id, 
+                    place: room.leaderboard.length,
+                    username: room.players[socket.id].username 
+                });
+
+                // Auto-return to lobby if everyone finished
+                if (room.leaderboard.length >= Object.keys(room.players).length) {
+                    io.to(currentRoom).emit('allFinished');
+                }
             }
+        }
+    });
+
+    // Seamlessly transition back to lobby phase
+    socket.on('returnToLobby', () => {
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].host === socket.id) {
+            rooms[currentRoom].state = 'lobby';
+            rooms[currentRoom].leaderboard = [];
+            Object.values(rooms[currentRoom].players).forEach(p => {
+                p.x = 0; p.y = 0; p.vx = 0; p.vy = 0; p.trail = []; p.finished = false; p.place = 0;
+            });
+            io.to(currentRoom).emit('returnedToLobby');
         }
     });
 
