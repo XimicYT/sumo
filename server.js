@@ -5,63 +5,124 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-
-// Serve static files if you want to host the HTML from the same server later
-app.use(express.static(__dirname)); 
+app.use(express.static(__dirname));
 
 const server = http.createServer(app);
-
-// Configure Socket.IO with CORS specifically for your Render URL environment
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allows any frontend to connect (useful for local testing + production)
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
-// State management
-const players = {};
+// Room State Management
+// Format: { '123': { players: { 'socketId': { ...data } } } }
+const rooms = {};
+
+const colors = ['#f2a900', '#66fcf1', '#ff4655', '#a64d79', '#4CAF50', '#9d4edd'];
 
 io.on('connection', (socket) => {
-    console.log(`[+] Player connected: ${socket.id}`);
+    console.log(`[+] Connection opened: ${socket.id}`);
+    let currentRoom = null;
 
-    // Initialize new player with a random neon color
-    const colors = ['#f2a900', '#66fcf1', '#ff4655', '#a64d79', '#4CAF50', '#9d4edd'];
-    players[socket.id] = {
-        x: 0, y: 0,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        trail: []
-    };
+    // --- ROOM SYSTEM ---
+    socket.on('createRoom', () => {
+        // Generate a random 3-digit code
+        let code;
+        do {
+            code = Math.floor(100 + Math.random() * 900).toString();
+        } while (rooms[code]);
 
-    // Send the current game state to the newly connected client
-    socket.emit('currentPlayers', players);
+        rooms[code] = { players: {} };
+        joinRoomLogic(socket, code);
+    });
 
-    // Tell all other clients a new player has joined
-    socket.broadcast.emit('newPlayer', { id: socket.id, player: players[socket.id] });
-
-    // Handle high-frequency movement updates from clients
-    socket.on('playerMovement', (data) => {
-        if (players[socket.id]) {
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-            players[socket.id].trail = data.trail;
+    socket.on('joinRoom', (code) => {
+        if (rooms[code]) {
+            joinRoomLogic(socket, code);
+        } else {
+            socket.emit('roomError', 'Room not found! Check the 3-digit code.');
         }
     });
 
-    // Handle clean disconnections
+    function joinRoomLogic(socket, code) {
+        currentRoom = code;
+        socket.join(code);
+        
+        rooms[code].players[socket.id] = {
+            x: 0, y: 0,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            trail: [],
+            lastHeartbeat: Date.now()
+        };
+
+        socket.emit('roomJoined', { code, players: rooms[code].players });
+        socket.broadcast.to(code).emit('newPlayer', { id: socket.id, player: rooms[code].players[socket.id] });
+        console.log(`[R] Player ${socket.id} joined room ${code}`);
+    }
+
+    // --- HEARTBEAT SYSTEM ---
+    socket.on('heartbeat_pong', () => {
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
+            rooms[currentRoom].players[socket.id].lastHeartbeat = Date.now();
+        }
+    });
+
+    // --- MOVEMENT ---
+    socket.on('playerMovement', (data) => {
+        if (currentRoom && rooms[currentRoom] && rooms[currentRoom].players[socket.id]) {
+            let p = rooms[currentRoom].players[socket.id];
+            p.x = data.x;
+            p.y = data.y;
+            p.trail = data.trail;
+        }
+    });
+
+    // --- DISCONNECTS ---
     socket.on('disconnect', () => {
-        console.log(`[-] Player disconnected: ${socket.id}`);
-        delete players[socket.id];
-        // Notify remaining clients
-        io.emit('playerDisconnected', socket.id);
+        console.log(`[-] Connection closed: ${socket.id}`);
+        handleDisconnect(socket.id, currentRoom);
     });
 });
 
-// Server Tick Rate: Broadcast the state of all players to everyone at ~30 FPS
-// This prevents overwhelming the network while maintaining smooth visual updates
+function handleDisconnect(socketId, roomCode) {
+    if (roomCode && rooms[roomCode]) {
+        delete rooms[roomCode].players[socketId];
+        io.to(roomCode).emit('playerDisconnected', socketId);
+
+        // Clean up empty rooms to prevent memory leaks
+        if (Object.keys(rooms[roomCode].players).length === 0) {
+            console.log(`[R] Room ${roomCode} empty. Deleting.`);
+            delete rooms[roomCode];
+        }
+    }
+}
+
+// SERVER TICK LOOP (30 FPS)
 setInterval(() => {
-    io.emit('stateUpdate', players);
+    const now = Date.now();
+    for (let code in rooms) {
+        let players = rooms[code].players;
+        
+        // Broadcast state
+        io.to(code).emit('stateUpdate', players);
+
+        // Check Heartbeats (Kick if no response in 10 seconds)
+        for (let id in players) {
+            if (now - players[id].lastHeartbeat > 10000) {
+                console.log(`[!] Disconnecting ${id} due to heartbeat timeout.`);
+                const socket = io.sockets.sockets.get(id);
+                if (socket) socket.disconnect(true);
+                else handleDisconnect(id, code); // Force cleanup if socket object is gone
+            }
+        }
+    }
 }, 1000 / 30);
+
+// HEARTBEAT PING LOOP (Every 3 seconds)
+setInterval(() => {
+    io.emit('heartbeat_ping');
+}, 3000);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
