@@ -1,110 +1,63 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
+
 const server = http.createServer(app);
 
+// Configure Socket.io to accept connections from your Netlify frontend
 const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] }
+  cors: {
+    origin: "*", // For production, you can replace "*" with your actual Netlify URL
+    methods: ["GET", "POST"]
+  }
 });
 
-const players = {};
-let taggerId = null;
-
-const safeSpawns = [
-    { x: 50, y: 50 }, { x: 900, y: 50 }, 
-    { x: 50, y: 600 }, { x: 900, y: 600 }
-];
+let broadcaster = null;
 
 io.on('connection', (socket) => {
-    if (!taggerId) taggerId = socket.id;
-    const spawn = safeSpawns[Math.floor(Math.random() * safeSpawns.length)];
+  console.log('User connected:', socket.id);
 
-    players[socket.id] = {
-        x: spawn.x, 
-        y: spawn.y,
-        isTagger: socket.id === taggerId,
-        lastPing: Date.now(),
-        serverFrozenUntil: 0 // Server-side tracker for cheating prevention
-    };
+  // The person sharing their screen registers as the broadcaster
+  socket.on('broadcaster', () => {
+    broadcaster = socket.id;
+    socket.broadcast.emit('broadcaster');
+    console.log('Broadcaster registered:', socket.id);
+  });
 
-    socket.emit('init', { players, id: socket.id });
-    socket.broadcast.emit('playerJoined', { id: socket.id, player: players[socket.id] });
+  // A viewer joins the room
+  socket.on('watcher', () => {
+    if (broadcaster) {
+      socket.to(broadcaster).emit('watcher', socket.id);
+    }
+  });
 
-    // Handle incoming movement (with freeze verification)
-    socket.on('move', (data) => {
-        if (players[socket.id]) {
-            // Do not allow movement if the server knows they are frozen
-            if (Date.now() < players[socket.id].serverFrozenUntil) return;
-            
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-            socket.broadcast.emit('playerMoved', { id: socket.id, x: data.x, y: data.y });
-        }
-    });
+  // Relay WebRTC signaling messages between peers
+  socket.on('offer', (id, message) => {
+    socket.to(id).emit('offer', socket.id, message);
+  });
 
-    // HEARTBEAT PING
-    socket.on('heartbeat', () => {
-        if (players[socket.id]) {
-            players[socket.id].lastPing = Date.now();
-        }
-    });
+  socket.on('answer', (id, message) => {
+    socket.to(id).emit('answer', socket.id, message);
+  });
 
-    // Handle tagging logic
-    socket.on('tag', (taggedId) => {
-        let tagger = players[socket.id];
-        let target = players[taggedId];
-        let now = Date.now();
+  socket.on('candidate', (id, message) => {
+    socket.to(id).emit('candidate', socket.id, message);
+  });
 
-        if (tagger && tagger.isTagger && target && !target.isTagger) {
-            // Make sure the tagger isn't currently frozen
-            if (now < tagger.serverFrozenUntil) return;
-
-            tagger.isTagger = false;
-            target.isTagger = true;
-            taggerId = taggedId;
-            
-            // Lock the new tagger on the server for 2.5 seconds
-            target.serverFrozenUntil = now + 2500;
-
-            // Broadcast to all clients to start their local visual timers
-            io.emit('tagged', { 
-                newTagger: taggedId, 
-                newRunner: socket.id 
-            });
-        }
-    });
-
-    socket.on('disconnect', () => {
-        handleDisconnect(socket.id);
-    });
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+    socket.broadcast.emit('disconnectPeer', socket.id);
+    if (socket.id === broadcaster) {
+      broadcaster = null;
+    }
+  });
 });
 
-function handleDisconnect(id) {
-    if (!players[id]) return;
-    delete players[id];
-    
-    if (id === taggerId) {
-        const remainingIds = Object.keys(players);
-        taggerId = remainingIds.length > 0 ? remainingIds[0] : null;
-        if (taggerId) {
-            players[taggerId].isTagger = true;
-            io.emit('roleUpdate', players);
-        }
-    }
-    io.emit('playerLeft', id);
-}
-
-// THE HEARTBEAT SWEEPER: Runs every 3 seconds to kick disconnected ghosts
-setInterval(() => {
-    let now = Date.now();
-    for (let id in players) {
-        if (now - players[id].lastPing > 8000) { // 8 seconds without a ping
-            handleDisconnect(id);
-        }
-    }
-}, 3000);
-
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Signaling server running on port ${PORT}`);
+});
